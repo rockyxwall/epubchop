@@ -1,6 +1,25 @@
 """Self-check for non-trivial logic in main.py without external test frameworks."""
 
-from main import calculate_stats, extractive_summary, split_chapters
+import os
+from main import (
+    calculate_stats,
+    extractive_summary,
+    find_epubs,
+    slugify,
+    split_chapters,
+)
+
+
+def test_slugify():
+    assert slugify("Fantasy Simulator.epub") == "Fantasy_Simulator_epub"
+    assert slugify("Fantasy Simulator") == "Fantasy_Simulator"
+    assert slugify("My--Book! Name") == "My_Book_Name"
+
+
+def test_find_epubs():
+    found = find_epubs()
+    assert len(found) >= 1, "Expected to find at least 1 EPUB in test workspace"
+    assert any("Fantasy Simulator.epub" in p for p in found)
 
 
 def test_calculate_stats():
@@ -32,6 +51,11 @@ def test_split_chapters():
     assert parts[0][0]["index"] == 1
     assert parts[1][-1]["index"] == 10
 
+    # Single part edge case
+    single = split_chapters(chapters, 1)
+    assert len(single) == 1
+    assert len(single[0]) == 10
+
 
 def test_extractive_summary():
     chapter = {
@@ -48,6 +72,8 @@ def test_extractive_summary():
 
 
 if __name__ == "__main__":
+    test_slugify()
+    test_find_epubs()
     test_calculate_stats()
     test_split_chapters()
     test_extractive_summary()

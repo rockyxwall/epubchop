@@ -1,31 +1,55 @@
 # epub-info-extract
 
-CLI utility to extract metadata, calculate reading/word statistics, summarize chapters, and split EPUB books into balanced text chunks designed for **Google NotebookLM** (500k word source limit) and **Gemini**.
+CLI and interactive terminal tool to inspect EPUB metadata, calculate reading/word statistics, summarize chapters, and split books into balanced chunks designed for **Google NotebookLM** (500k word source limit) and **Gemini**.
 
 ## Features
 
-- **Accurate Statistics:** Total chapters, total words (whitespace standard), average words/chapter, median chapter length, min/max word range.
-- **Balanced Chunker:** Splits large EPUBs into balanced text chunks under a target word count (default: 400k words) or into explicit $N$ parts.
-- **Chapter Summaries:** Quick extractive excerpt (head + tail paragraphs) or optional AI-generated summary using Gemini API.
-- **Zero Heavy Frameworks:** Pure Python stdlib CLI + `ebooklib` & `beautifulsoup4`.
+- **Interactive TUI:** Searchable fuzzy picker to select EPUBs from `epubs/` and run actions with arrow keys.
+- **Accurate Statistics:** Total chapters, total words (whitespace standard), average words/chapter, median length, and min/max range.
+- **Gemini / NotebookLM Chunker:** Auto-splits EPUBs into balanced chunks (default: <=400k words) saved to `output/{book_name}/{book_name}_1.txt`, `{book_name}_2.txt`, etc.
+- **Chapter Summaries:** Instant local extractive preview (head + tail) or optional Gemini AI summary.
+- **Dedicated Storage:** Place all `.epub` files inside `epubs/` (git-ignored).
 
 ## Requirements
 
 - Python >= 3.10
-- [uv](https://github.com/astral-sh/uv) (recommended)
+- [uv](https://github.com/astral-sh/uv)
 
-## Quick Start
+## Setup
 
-Install dependencies with `uv`:
+Drop your `.epub` files into the `epubs/` directory, then install dependencies:
 
 ```bash
 uv sync
 ```
 
-### 1. View EPUB Statistics
+## Usage
+
+### 1. Interactive Terminal UI (Recommended)
+
+Run without arguments to launch the interactive menu with fuzzy search:
 
 ```bash
-uv run main.py info "Fantasy Simulator.epub"
+uv run main.py
+```
+
+Features in TUI:
+- Select and search any `.epub` in `epubs/`
+- View statistics
+- Split for NotebookLM with custom or auto parts
+- Search chapters by name or number to read summaries / excerpts
+
+---
+
+### 2. Direct CLI Commands
+
+#### View Statistics
+
+```bash
+uv run main.py info "epubs/Fantasy Simulator.epub"
+
+# Or list all chapters with word counts:
+uv run main.py info "epubs/Fantasy Simulator.epub" --list
 ```
 
 Output:
@@ -38,51 +62,44 @@ Median:         1,875 words
 Word Range:     597 – 3,285 words
 ```
 
-List all chapters with individual word counts:
-```bash
-uv run main.py info "Fantasy Simulator.epub" --list
-```
+#### Split for NotebookLM / Gemini
 
-### 2. Split for NotebookLM / Gemini
-
-NotebookLM enforces a 500,000-word limit per source file. By default, `split` chunks books into parts under 400,000 words:
+Splits into `output/{nameepub}/{nameepub}_1.txt`, `{nameepub}_2.txt`, etc.:
 
 ```bash
-# Auto-split into parts fitting 400k words each
-uv run main.py split "Fantasy Simulator.epub"
+# Auto-split to fit under 400k words per part:
+uv run main.py split "epubs/Fantasy Simulator.epub"
 
-# Or split into exact number of balanced parts
-uv run main.py split "Fantasy Simulator.epub" --parts 5 --output-dir output
+# Or split into exact number of balanced parts:
+uv run main.py split "epubs/Fantasy Simulator.epub" --parts 5
 ```
 
 Output:
 ```text
-Splitting 'Fantasy Simulator.epub' (1,622,865 words) into 5 part(s)...
-  Fantasy_Simulator_001.txt:  324,486 words (Chapters    1 -  208)
-  Fantasy_Simulator_002.txt:  324,411 words (Chapters  209 -  391)
-  Fantasy_Simulator_003.txt:  325,029 words (Chapters  392 -  536)
-  Fantasy_Simulator_004.txt:  325,091 words (Chapters  537 -  699)
-  Fantasy_Simulator_005.txt:  323,848 words (Chapters  700 -  853)
+Splitting 'epubs/Fantasy Simulator.epub' (1,622,865 words) into 5 part(s)...
+  Fantasy_Simulator_1.txt:  324,486 words (Chapters    1 -  208)
+  Fantasy_Simulator_2.txt:  324,411 words (Chapters  209 -  391)
+  Fantasy_Simulator_3.txt:  325,029 words (Chapters  392 -  536)
+  Fantasy_Simulator_4.txt:  325,091 words (Chapters  537 -  699)
+  Fantasy_Simulator_5.txt:  323,848 words (Chapters  700 -  853)
 
-Saved 5 files to 'output/'
+Saved 5 files in 'output\Fantasy_Simulator/'
 ```
 
-### 3. Chapter Summaries & Excerpts
+#### Chapter Summary & Excerpt
 
 Fast local extractive excerpt (no API key needed):
 ```bash
-uv run main.py summary "Fantasy Simulator.epub" --chapter 1
+uv run main.py summary "epubs/Fantasy Simulator.epub" --chapter 1
 ```
 
-AI-powered summary via Gemini API (requires `GEMINI_API_KEY` environment variable):
+AI summary via Gemini API (requires `GEMINI_API_KEY` in environment):
 ```bash
 set GEMINI_API_KEY=your_key_here
-uv run main.py summary "Fantasy Simulator.epub" --chapter 1 --ai
+uv run main.py summary "epubs/Fantasy Simulator.epub" --chapter 1 --ai
 ```
 
 ## Running Tests
-
-Run the built-in self-checks:
 
 ```bash
 uv run python test_core.py
