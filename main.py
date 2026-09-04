@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from ebooklib import epub
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
+from InquirerPy.utils import get_style
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -24,20 +25,23 @@ if hasattr(sys.stdout, "reconfigure"):
 
 console = Console(force_terminal=True, legacy_windows=False)
 
-TUI_STYLE = {
-    "questionmark": "#e5c07b bold",
-    "answermark": "#98c379 bold",
-    "answer": "#98c379 bold",
-    "input": "#abb2bf",
-    "question": "bold white",
-    "instruction": "#5c6370 italic",
-    "pointer": "#61afef bold",
-    "separator": "#5c6370",
-    "fuzzy_prompt": "#c678dd bold",
-    "fuzzy_info": "#abb2bf",
-    "fuzzy_border": "#4b5263",
-    "fuzzy_match": "#e5c07b bold",
-}
+TUI_STYLE = get_style(
+    {
+        "questionmark": "#e5c07b bold",
+        "answermark": "#98c379 bold",
+        "answer": "#98c379 bold",
+        "input": "#abb2bf",
+        "question": "bold white",
+        "instruction": "#5c6370 italic",
+        "pointer": "#61afef bold",
+        "separator": "#5c6370",
+        "fuzzy_prompt": "#c678dd bold",
+        "fuzzy_info": "#abb2bf",
+        "fuzzy_border": "#4b5263",
+        "fuzzy_match": "#e5c07b bold",
+    },
+    style_override=False,
+)
 
 
 def find_epubs() -> list[str]:
