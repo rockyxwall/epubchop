@@ -291,6 +291,7 @@ def run_interactive():
             "Select an EPUB book (type to search):",
             choices=epubs,
             use_search_filter=True,
+            use_jk_keys=False,
         ).ask()
 
         if not selected_epub:
@@ -360,6 +361,7 @@ def run_interactive():
                     "Select chapter (type number or title to search):",
                     choices=choices,
                     use_search_filter=True,
+                    use_jk_keys=False,
                 ).ask()
                 if not ch_num:
                     continue
@@ -434,7 +436,11 @@ def main():
     # If no command supplied or 'ui' requested: run interactive UI if TTY
     if not args.command or args.command == "ui":
         if sys.stdin.isatty():
-            run_interactive()
+            try:
+                run_interactive()
+            except Exception as e:
+                print(f"\n[Notice] Interactive UI error: {e}")
+                print("Falling back to CLI commands. Run `uv run main.py --help` for usage.\n")
             return
         elif not args.command:
             parser.print_help()
