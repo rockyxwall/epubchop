@@ -29,7 +29,7 @@ wheels = [
 ]
 
 [[package]]
-name = "epub-info-extract"
+name = "epubchop"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

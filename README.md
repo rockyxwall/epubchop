@@ -1,4 +1,4 @@
-# epub-info-extract
+# epubchop
 
 CLI and interactive terminal tool to inspect EPUB metadata, calculate reading/word statistics, summarize chapters, and split books into balanced chunks designed for **Google NotebookLM** (500k word source limit) and **Gemini**.
 

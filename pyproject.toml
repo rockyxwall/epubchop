@@ -1,9 +1,11 @@
 [project]
-name = "epub-info-extract"
+name = "epubchop"
 version = "0.1.0"
+description = "Split EPUBs into balanced chunks for NotebookLM/Gemini with reading stats and chapter summaries"
 requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4>=4.15.0",
     "ebooklib>=0.20",
     "questionary>=2.1.1",
 ]
+
