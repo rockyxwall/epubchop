@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EPUB extractor and chunker for Gemini Notebook / NotebookLM."""
+"""epubchop: EPUB extractor and chunker for Gemini Notebook / NotebookLM."""
 
 import argparse
 import json
@@ -12,10 +12,32 @@ import urllib.error
 import urllib.request
 from bs4 import BeautifulSoup
 from ebooklib import epub
+from InquirerPy import inquirer
+from InquirerPy.base.control import Choice
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 # Ensure clean UTF-8 output across Windows consoles
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+console = Console(force_terminal=True, legacy_windows=False)
+
+TUI_STYLE = {
+    "questionmark": "#e5c07b bold",
+    "answermark": "#98c379 bold",
+    "answer": "#98c379 bold",
+    "input": "#abb2bf",
+    "question": "bold white",
+    "instruction": "#5c6370 italic",
+    "pointer": "#61afef bold",
+    "separator": "#5c6370",
+    "fuzzy_prompt": "#c678dd bold",
+    "fuzzy_info": "#abb2bf",
+    "fuzzy_border": "#4b5263",
+    "fuzzy_match": "#e5c07b bold",
+}
 
 
 def find_epubs() -> list[str]:
@@ -114,18 +136,35 @@ def cmd_info(epub_path: str, show_list: bool = False) -> None:
     total = stats["total_words"]
     million_str = f" (~{total / 1_000_000:.2f}M)" if total >= 100_000 else ""
 
-    print(f"\nFile:           {os.path.basename(epub_path)}")
-    print(f"Total Chapters: {stats['chapters']:,}")
-    print(f"Total Words:    {stats['total_words']:,} words{million_str}")
-    print(f"Average:        ~{stats['avg_words']:,.0f} words/chapter")
-    print(f"Median:         {stats['median_words']:,.0f} words")
-    print(f"Word Range:     {stats['min_words']:,} – {stats['max_words']:,} words\n")
+    table = Table(box=None, pad_edge=False, show_header=False)
+    table.add_column("Metric", style="bold cyan", width=18)
+    table.add_column("Value", style="bold white")
+    table.add_column("Note", style="dim")
+
+    table.add_row("Total Chapters", f"{stats['chapters']:,}", "spine items")
+    table.add_row("Total Words", f"{stats['total_words']:,} words", million_str.strip())
+    table.add_row("Average Length", f"~{stats['avg_words']:,.0f} words/chapter", "mean")
+    table.add_row("Median Length", f"{stats['median_words']:,.0f} words", "50th percentile")
+    table.add_row("Word Range", f"{stats['min_words']:,} – {stats['max_words']:,} words", "min – max")
+
+    card = Panel(
+        table,
+        title=f"[bold green]📊 {os.path.basename(epub_path)}[/]",
+        subtitle=f"[dim]{epub_path}[/]",
+        border_style="cyan",
+        padding=(1, 2),
+    )
+    console.print(card)
 
     if show_list:
-        print("Chapters:")
+        list_table = Table(title="Chapter Word Counts", border_style="blue", header_style="bold magenta")
+        list_table.add_column("#", style="dim", width=6, justify="right")
+        list_table.add_column("Chapter Title", style="bold white")
+        list_table.add_column("Words", justify="right", style="green")
+
         for c in chapters:
-            print(f"  [{c['index']:>4}] {c['title']:<45} ({c['words']:,} words)")
-        print()
+            list_table.add_row(str(c["index"]), c["title"], f"{c['words']:,}")
+        console.print(list_table)
 
 
 def split_chapters(chapters: list[dict], target_parts: int) -> list[list[dict]]:
@@ -176,8 +215,17 @@ def cmd_split(
     book_out_dir = os.path.join(output_dir, book_slug)
     os.makedirs(book_out_dir, exist_ok=True)
 
-    print(f"\nSplitting '{epub_path}' ({total_words:,} words) into {parts_count} part(s)...")
     parts = split_chapters(chapters, parts_count)
+
+    split_table = Table(
+        title=f"✂️ Split: {raw_name} ({total_words:,} words into {parts_count} parts)",
+        border_style="cyan",
+        header_style="bold cyan",
+    )
+    split_table.add_column("Part", justify="center", style="bold yellow")
+    split_table.add_column("Filename", style="bold white")
+    split_table.add_column("Words", justify="right", style="green")
+    split_table.add_column("Chapters", justify="center", style="magenta")
 
     written_paths = []
     for idx, part in enumerate(parts, 1):
@@ -202,9 +250,10 @@ def cmd_split(
                 f.write(f"### {c['title']}\n\n{c['text']}")
 
         written_paths.append(filepath)
-        print(f"  {filename}: {part_words:>8,} words (Chapters {start_ch:>4} - {end_ch:>4})")
+        split_table.add_row(f"{idx}/{parts_count}", filename, f"{part_words:,}", f"{start_ch} - {end_ch}")
 
-    print(f"\nSaved {len(written_paths)} files in '{book_out_dir}/'\n")
+    console.print(split_table)
+    console.print(f"[bold green]✓ Successfully saved {len(written_paths)} chunk files to:[/] [cyan]{book_out_dir}/[/]\n")
     return written_paths
 
 
@@ -213,10 +262,8 @@ def summarize_chapter(chapter: dict, use_ai: bool = False) -> str:
     if use_ai:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            return (
-                "[Notice] GEMINI_API_KEY not set. Falling back to extractive summary:\n\n"
-                + extractive_summary(chapter)
-            )
+            console.print("[yellow][Notice] GEMINI_API_KEY not set in environment. Falling back to extractive excerpt.[/]")
+            return extractive_summary(chapter)
         return ai_summary(chapter, api_key)
     return extractive_summary(chapter)
 
@@ -230,13 +277,9 @@ def extractive_summary(chapter: dict, max_paras: int = 2) -> str:
     else:
         head = "\n\n".join(paragraphs[:max_paras])
         tail = "\n\n".join(paragraphs[-max_paras:])
-        body = f"{head}\n\n[... {len(paragraphs) - (max_paras * 2)} paragraphs omitted ...]\n\n{tail}"
+        body = f"{head}\n\n[dim italic]... [{len(paragraphs) - (max_paras * 2)} paragraphs omitted] ...[/dim italic]\n\n{tail}"
 
-    return (
-        f"Chapter {chapter['index']}: {chapter['title']}\n"
-        f"Length: {chapter['words']:,} words | {len(paragraphs)} paragraphs\n\n"
-        f"{body}"
-    )
+    return body
 
 
 def ai_summary(chapter: dict, api_key: str) -> str:
@@ -256,139 +299,161 @@ def ai_summary(chapter: dict, api_key: str) -> str:
             if candidates:
                 parts = candidates[0].get("content", {}).get("parts", [])
                 if parts:
-                    return f"AI Summary - Chapter {chapter['index']} ({chapter['title']}):\n\n" + parts[0]["text"]
+                    return parts[0]["text"]
             return "[Gemini returned empty response]"
     except urllib.error.URLError as e:
-        return f"[Gemini API error: {e}]. Falling back to extractive:\n\n" + extractive_summary(chapter)
+        console.print(f"[red][Gemini API error: {e}]. Falling back to extractive summary.[/]")
+        return extractive_summary(chapter)
 
 
 def cmd_summary(epub_path: str, chapter_num: int, use_ai: bool = False) -> None:
     chapters = load_chapters(epub_path)
     idx = chapter_num - 1
     if idx < 0 or idx >= len(chapters):
-        print(f"Error: Chapter {chapter_num} out of range (1 to {len(chapters)})", file=sys.stderr)
+        console.print(f"[red]Error: Chapter {chapter_num} out of range (1 to {len(chapters)})[/]")
         return
-    print(summarize_chapter(chapters[idx], use_ai=use_ai))
+    ch = chapters[idx]
+    content = summarize_chapter(ch, use_ai=use_ai)
+
+    badge = "[bold purple]🤖 Gemini AI Summary[/]" if use_ai else "[bold cyan]⚡ Extractive Excerpt[/]"
+    console.print(
+        Panel(
+            content,
+            title=f"{badge} — [bold white]Chapter {ch['index']}: {ch['title']}[/]",
+            subtitle=f"[dim]{ch['words']:,} words[/]",
+            border_style="purple" if use_ai else "cyan",
+            padding=(1, 2),
+        )
+    )
 
 
 def run_interactive():
-    """Terminal Interactive UI using questionary with fuzzy search-select."""
-    try:
-        import questionary
-    except ImportError:
-        print("questionary not installed. Run `uv add questionary` or use CLI flags.")
-        sys.exit(1)
-
+    """Terminal Interactive UI using InquirerPy with fuzzy search and Rich panels."""
     epubs = find_epubs()
     if not epubs:
-        print("\nNo .epub files found in './epubs' or current directory.")
-        print("Drop EPUB books into the 'epubs/' folder and run again.\n")
-        sys.exit(0)
+        console.print(
+            Panel(
+                "[yellow]No .epub files found in './epubs' or current directory.[/]\n\n"
+                "Drop your `.epub` files into the [bold cyan]epubs/[/] folder and re-run.",
+                title="[bold red]No Books Found[/]",
+                border_style="red",
+            )
+        )
+        return
 
     while True:
-        # Searchable EPUB picker
-        selected_epub = questionary.select(
-            "Select an EPUB book (type to search):",
-            choices=epubs,
-            use_search_filter=True,
-            use_jk_keys=False,
-        ).ask()
+        # Searchable EPUB picker with border
+        epub_choices = [Choice(name=os.path.basename(p), value=p) for p in epubs]
+        selected_epub = inquirer.fuzzy(
+            message="Select an EPUB book (type to fuzzy-search):",
+            choices=epub_choices,
+            border=True,
+            style=TUI_STYLE,
+        ).execute()
 
         if not selected_epub:
             break
 
-        while True:
-            action = questionary.select(
-                f"Actions for [{os.path.basename(selected_epub)}]:",
-                choices=[
-                    "📊 View Statistics",
-                    "✂️ Split for Gemini Notebook (NotebookLM)",
-                    "📖 Chapter Summary / Excerpt",
-                    "📋 List All Chapters",
-                    "🔄 Choose Another EPUB",
-                    "❌ Exit",
-                ],
-            ).ask()
+        # Display rich stats card on selection
+        cmd_info(selected_epub)
 
-            if not action or action == "❌ Exit":
-                print("Goodbye!")
+        while True:
+            action = inquirer.select(
+                message=f"Action for [{os.path.basename(selected_epub)}]:",
+                choices=[
+                    Choice(name="📊 Refresh Statistics", value="stats"),
+                    Choice(name="✂️ Split for Gemini Notebook (NotebookLM)", value="split"),
+                    Choice(name="📖 Chapter Summary / Excerpt", value="summary"),
+                    Choice(name="📋 List All Chapters & Word Counts", value="list"),
+                    Choice(name="🔄 Select Another EPUB", value="switch"),
+                    Choice(name="❌ Exit", value="exit"),
+                ],
+                border=True,
+                style=TUI_STYLE,
+            ).execute()
+
+            if not action or action == "exit":
+                console.print("[dim]Goodbye![/]")
                 return
-            elif action == "🔄 Choose Another EPUB":
+            elif action == "switch":
                 break
-            elif action == "📊 View Statistics":
+            elif action == "stats":
                 cmd_info(selected_epub)
-            elif action == "📋 List All Chapters":
+            elif action == "list":
                 cmd_info(selected_epub, show_list=True)
-            elif action == "✂️ Split for Gemini Notebook (NotebookLM)":
-                mode = questionary.select(
-                    "Split configuration:",
+            elif action == "split":
+                mode = inquirer.select(
+                    message="Split configuration:",
                     choices=[
-                        "Auto (fit under 400,000 words per chunk for NotebookLM)",
-                        "Specify number of parts (e.g. 5)",
-                        "Custom max words per part",
+                        Choice(name="Auto (fit under 400,000 words per chunk for NotebookLM)", value="auto"),
+                        Choice(name="Specify number of parts (e.g. 5)", value="parts"),
+                        Choice(name="Custom max words per part", value="custom"),
                     ],
-                ).ask()
+                    border=True,
+                    style=TUI_STYLE,
+                ).execute()
                 if not mode:
                     continue
 
-                if "Auto" in mode:
+                if mode == "auto":
                     cmd_split(selected_epub, max_words=400_000)
-                elif "number of parts" in mode:
-                    parts_str = questionary.text("How many parts?", default="5").ask()
+                elif mode == "parts":
+                    parts_str = inquirer.text(message="How many parts?", default="5", style=TUI_STYLE).execute()
                     try:
                         parts_val = int(parts_str)
                         cmd_split(selected_epub, parts_count=parts_val)
                     except ValueError:
-                        print("Invalid number of parts.")
-                elif "Custom max words" in mode:
-                    words_str = questionary.text("Max words per chunk?", default="400000").ask()
+                        console.print("[red]Invalid number of parts.[/]")
+                elif mode == "custom":
+                    words_str = inquirer.text(message="Max words per chunk?", default="400000", style=TUI_STYLE).execute()
                     try:
                         words_val = int(words_str)
                         cmd_split(selected_epub, max_words=words_val)
                     except ValueError:
-                        print("Invalid word count.")
+                        console.print("[red]Invalid word count.[/]")
 
-            elif action == "📖 Chapter Summary / Excerpt":
+            elif action == "summary":
                 chapters = load_chapters(selected_epub)
-                choices = [
-                    questionary.Choice(
-                        title=f"[{c['index']:>4}] {c['title']} ({c['words']:,} words)",
+                chapter_choices = [
+                    Choice(
+                        name=f"[{c['index']:>4}] {c['title']} ({c['words']:,} words)",
                         value=c["index"],
                     )
                     for c in chapters
                 ]
-                ch_num = questionary.select(
-                    "Select chapter (type number or title to search):",
-                    choices=choices,
-                    use_search_filter=True,
-                    use_jk_keys=False,
-                ).ask()
+                ch_num = inquirer.fuzzy(
+                    message="Select chapter (type number or title to search):",
+                    choices=chapter_choices,
+                    border=True,
+                    style=TUI_STYLE,
+                ).execute()
                 if not ch_num:
                     continue
 
-                mode = questionary.select(
-                    "Summary type:",
+                sum_mode = inquirer.select(
+                    message="Summary style:",
                     choices=[
-                        "⚡ Fast Extractive Excerpt",
-                        "🤖 Gemini AI Summary (requires GEMINI_API_KEY)",
+                        Choice(name="⚡ Fast Extractive Excerpt (offline, instant)", value="extractive"),
+                        Choice(name="🤖 Gemini AI Summary (requires GEMINI_API_KEY)", value="ai"),
                     ],
-                ).ask()
-                if not mode:
+                    border=True,
+                    style=TUI_STYLE,
+                ).execute()
+                if not sum_mode:
                     continue
 
-                use_ai = "Gemini" in mode
-                cmd_summary(selected_epub, ch_num, use_ai=use_ai)
+                cmd_summary(selected_epub, ch_num, use_ai=(sum_mode == "ai"))
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract statistics, split for Gemini/NotebookLM, or summarize EPUB chapters."
+        description="epubchop: Extract statistics, split for Gemini/NotebookLM, or summarize EPUB chapters."
     )
     subparsers = parser.add_subparsers(dest="command")
 
     # info
     p_info = subparsers.add_parser("info", help="Display EPUB statistics and word counts")
-    p_info.add_argument("epub", nargs="?", default=None, help="Path to EPUB file (optional if using interactive)")
+    p_info.add_argument("epub", nargs="?", default=None, help="Path to EPUB file (optional if auto-detected)")
     p_info.add_argument("--list", action="store_true", help="List all chapters and word counts")
 
     # split
@@ -409,7 +474,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sum.add_argument("--chapter", type=int, required=True, help="Chapter number (1-based index)")
     p_sum.add_argument("--ai", action="store_true", help="Use Gemini API for summary (requires GEMINI_API_KEY)")
 
-    # interactive
+    # ui
     subparsers.add_parser("ui", help="Launch interactive terminal UI")
 
     return parser
@@ -422,10 +487,10 @@ def resolve_epub(given_path: str | None) -> str:
     if len(epubs) == 1:
         return epubs[0]
     elif len(epubs) > 1:
-        print(f"Multiple EPUBs found: {epubs}. Specify path or run without arguments for interactive UI.")
+        console.print(f"[yellow]Multiple EPUBs found: {epubs}. Specify path or run without arguments for interactive UI.[/]")
         sys.exit(1)
     else:
-        print("No EPUB found. Drop into 'epubs/' folder.")
+        console.print("[red]No EPUB found. Drop into 'epubs/' folder.[/]")
         sys.exit(1)
 
 
@@ -438,9 +503,11 @@ def main():
         if sys.stdin.isatty():
             try:
                 run_interactive()
+            except KeyboardInterrupt:
+                console.print("\n[dim]Cancelled by user. Goodbye![/]")
             except Exception as e:
-                print(f"\n[Notice] Interactive UI error: {e}")
-                print("Falling back to CLI commands. Run `uv run main.py --help` for usage.\n")
+                console.print(f"\n[yellow][Notice] Interactive UI error: {e}[/]")
+                console.print("Falling back to CLI commands. Run `uv run main.py --help` for usage.\n")
             return
         elif not args.command:
             parser.print_help()

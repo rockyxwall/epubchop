@@ -65,7 +65,6 @@ def test_extractive_summary():
         "text": "P1\n\nP2\n\nP3\n\nP4\n\nP5\n\nP6",
     }
     summary = extractive_summary(chapter, max_paras=2)
-    assert "Prologue" in summary
     assert "P1" in summary and "P2" in summary
     assert "P5" in summary and "P6" in summary
     assert "omitted" in summary
