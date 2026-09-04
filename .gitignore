@@ -12,4 +12,5 @@ wheels/
 
 # Book and generated files
 *.epub
-output/
+output/*
+!output/.gitkeep
